@@ -11,30 +11,37 @@ return new class extends Migration
         Schema::create('orders', function (Blueprint $table) {
             $table->id();
             $table->string('order_number')->unique();
-            $table->foreignId('customer_id')->constrained('users')->cascadeOnDelete();
-            $table->foreignId('vendor_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('rider_id')->nullable()->constrained('users')->nullOnDelete();
-            $table->decimal('subtotal', 12, 2)->default(0);
-            $table->decimal('delivery_fee', 12, 2)->default(0);
-            $table->decimal('service_fee', 12, 2)->default(0);
-            $table->decimal('discount', 12, 2)->default(0);
-            $table->decimal('tax', 12, 2)->default(0);
-            $table->decimal('total', 12, 2)->default(0);
-            $table->string('currency', 3)->default('USD');
+            $table->string('idempotency_key')->unique()->nullable();
+
+            $table->foreignId('customer_id')->constrained();
+            $table->foreignId('vendor_id')->constrained();
+            $table->foreignId('rider_id')->nullable()->constrained();
+
+            $table->decimal('subtotal', 10, 2);
+            $table->decimal('delivery_fee', 10, 2);
+            $table->decimal('service_fee', 10, 2);
+            $table->decimal('tip', 10, 2)->default(0);
+            $table->decimal('discount', 10, 2)->default(0);
+            $table->string('promo_code')->nullable();
+            $table->decimal('total', 10, 2);
+
             $table->string('status')->default('pending');
-            $table->string('payment_status')->default('unpaid');
-            $table->string('delivery_status')->default('pending');
-            $table->text('pickup_address')->nullable();
-            $table->decimal('pickup_latitude', 10, 8)->nullable();
-            $table->decimal('pickup_longitude', 11, 8)->nullable();
-            $table->text('delivery_address')->nullable();
-            $table->decimal('delivery_latitude', 10, 8)->nullable();
-            $table->decimal('delivery_longitude', 11, 8)->nullable();
+            $table->string('payment_status')->default('pending');
+            $table->string('payment_method')->nullable();
+
+            $table->text('delivery_address');
+            $table->decimal('delivery_latitude', 10, 7);
+            $table->decimal('delivery_longitude', 10, 7);
+            $table->decimal('distance_km', 8, 2)->nullable();
+            $table->string('dropoff_preference')->nullable();
             $table->text('notes')->nullable();
+
             $table->timestamp('placed_at')->nullable();
             $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('rider_assigned_at')->nullable();
             $table->timestamp('completed_at')->nullable();
             $table->timestamp('cancelled_at')->nullable();
+
             $table->timestamps();
         });
     }

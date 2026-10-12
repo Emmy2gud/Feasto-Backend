@@ -24,4 +24,9 @@ class Wallet extends Model
     {
         return $this->hasMany(WalletLedger::class);
     }
+
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
+    }
 }

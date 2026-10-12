@@ -18,11 +18,15 @@ class StoreProductRequest extends FormRequest
             'category_id' => ['required', 'exists:categories,id'],
             'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'sku' => ['nullable', 'string', 'max:255', 'unique:products,sku'],
             'price' => ['required', 'numeric', 'min:0'],
-            'compare_at_price' => ['nullable', 'numeric', 'min:0'],
-            'stock_quantity' => ['required', 'integer', 'min:0'],
+            'discount_price' => ['nullable', 'numeric', 'min:0'],
+            'image' => ['nullable', 'string', 'max:255'],
+            // 'gallery' => ['nullable', 'array'],
+            // 'gallery.*' => ['nullable', 'string', 'max:255'],
+            'is_available' => ['nullable', 'boolean'],
             'status' => ['nullable', 'string', 'max:50'],
+            'addon_name' => ['nullable', 'string', 'max:255'],
+            'addon_price' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

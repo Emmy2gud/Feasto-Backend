@@ -34,5 +34,10 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'korapay' => [
+    'base_url'   => env('KORA_BASE_URL', 'https://api.korapay.com/merchant'),
+    'public_key' => env('KORA_PUBLIC_KEY'),
+    'secret_key' => env('KORA_SECRET_KEY'),
+],
 
 ];

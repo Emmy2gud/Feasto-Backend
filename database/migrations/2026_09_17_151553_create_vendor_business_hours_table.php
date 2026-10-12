@@ -11,13 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('o_t_p_s', function (Blueprint $table) {
+        Schema::create('vendor_business_hours', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->string('otp_code');
-            $table->string('email')->unique();
-            $table->string('type');
-            $table->timestamp('expires_at');
+            $table->foreignId('vendor_id')->constrained()->cascadeOnDelete();
+            $table->string('day_of_week');
+            $table->time('open_time');
+            $table->time('close_time');
+            $table->boolean('is_closed')->default(false);
             $table->timestamps();
         });
     }
@@ -27,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('o_t_p_s');
+        Schema::dropIfExists('vendor_business_hours');
     }
 };

@@ -7,10 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 class OtpVerification extends Model
 {
     protected $fillable = [
-        'user_id',
-        'phone_or_email',
+
+        'email',
+        'password',
         'otp_hash',
         'purpose',
+        'fullname',
+        'phone_number',
         'expires_at',
         'verified_at',
         'attempts',

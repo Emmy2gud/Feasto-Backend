@@ -21,6 +21,10 @@ class OrderItem extends Model
         return $this->belongsTo(Order::class);
     }
 
+    public function addons(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(OrderItemAddons::class);
+    }
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);

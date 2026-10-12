@@ -28,6 +28,12 @@ class StoreVendorRequest extends FormRequest
             'is_accepting_orders' => ['nullable', 'boolean'],
             'status' => ['nullable', 'string', 'max:50'],
             'verification_status' => ['nullable', 'string', 'max:50'],
+           
+         'day_of_week'=> ['required', 'string', 'max:20'],
+        'opening_time'=> ['required', 'date_format:H:i'],
+        'closing_time'=> ['required', 'date_format:H:i'],
+        'is_closed'=> ['boolean'],
+
         ];
     }
 }

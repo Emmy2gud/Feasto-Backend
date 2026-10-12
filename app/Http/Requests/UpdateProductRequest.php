@@ -14,15 +14,17 @@ class UpdateProductRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'vendor_id' => ['sometimes', 'exists:vendors,id'],
-            'category_id' => ['sometimes', 'exists:categories,id'],
-            'name' => ['sometimes', 'string', 'max:255'],
+            'name' => ['required', 'string', 'max:255'],
             'description' => ['nullable', 'string'],
-            'sku' => ['sometimes', 'string', 'max:255', 'unique:products,sku'],
-            'price' => ['sometimes', 'numeric', 'min:0'],
-            'compare_at_price' => ['nullable', 'numeric', 'min:0'],
-            'stock_quantity' => ['sometimes', 'integer', 'min:0'],
-            'status' => ['sometimes', 'string', 'max:50'],
+            'price' => ['required', 'numeric', 'min:0'],
+            'discount_price' => ['nullable', 'numeric', 'min:0'],
+            'image' => ['nullable', 'string', 'max:255'],
+            // 'gallery' => ['nullable', 'array'],
+            // 'gallery.*' => ['nullable', 'string', 'max:255'],
+            'is_available' => ['nullable', 'boolean'],
+            'status' => ['nullable', 'string', 'max:50'],
+            'addon_name' => ['nullable', 'string', 'max:255'],
+            'addon_price' => ['nullable', 'numeric', 'min:0'],
         ];
     }
 }

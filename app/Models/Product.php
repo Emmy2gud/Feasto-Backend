@@ -10,14 +10,24 @@ class Product extends Model
 {
     protected $fillable = [
         'vendor_id',
-        'category_id',
+          'category_id',
         'name',
+        'slug',
         'description',
-        'sku',
         'price',
-        'compare_at_price',
-        'stock_quantity',
+        'discount_price',
+        'image',
+        'gallery',
+        'is_available',
         'status',
+    ];
+
+    protected $casts = [
+        'gallery' => 'array',
+        'is_available' => 'boolean',
+        'is_featured' => 'boolean',
+        'price' => 'decimal:2',
+        'discount_price' => 'decimal:2',
     ];
 
     public function vendor(): BelongsTo

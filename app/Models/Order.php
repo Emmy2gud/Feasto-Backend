@@ -9,31 +9,27 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Order extends Model
 {
     protected $fillable = [
-        'order_number',
-        'customer_id',
-        'vendor_id',
-        'rider_id',
-        'subtotal',
-        'delivery_fee',
-        'service_fee',
-        'discount',
-        'tax',
-        'total',
-        'currency',
-        'status',
-        'payment_status',
-        'delivery_status',
-        'pickup_address',
-        'pickup_latitude',
-        'pickup_longitude',
-        'delivery_address',
-        'delivery_latitude',
-        'delivery_longitude',
-        'notes',
-        'placed_at',
-        'accepted_at',
-        'completed_at',
-        'cancelled_at',
+
+    'order_number',
+    'customer_id',
+    'vendor_id',
+    'rider_id',          // nullable — not assigned yet when order is placed
+    'rider_assigned_at', // nullable, timestamp of when a rider accepted
+    'subtotal',
+    'delivery_fee',
+    'discount',
+    'total',
+    'status',            // pending, accepted, preparing, ready, picked_up, delivered, cancelled
+    'payment_status',    // pending, paid, failed
+    'delivery_address',
+    'delivery_latitude',
+    'delivery_longitude',
+    'recipient_phone',
+    'notes',
+    'placed_at',
+    'accepted_at',
+    'completed_at',
+    'cancelled_at',
     ];
 
     protected $casts = [
