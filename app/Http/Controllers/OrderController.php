@@ -1,22 +1,76 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Order;
-use App\Services\Api\PaymentGatewayService;
+use App\Services\Orders\AcceptOrderService;
+use App\Services\Orders\CancelOrderService;
+use App\Services\Orders\DeliveredOrderService;
+use App\Services\Orders\PickedUpOrderService;
+use App\Services\Orders\PrepareOrderService;
+use App\Services\Orders\ReadyOrderService;
+use App\Services\OrderService;
 use DB;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
 
 class OrderController extends Controller
 {
-        public function __construct(
-        protected PaymentGatewayService $paymentGatewayService
+    public function __construct(
+        protected DeliveredOrderService $deliveredOrderService,
+        protected CancelOrderService $cancelOrderService,
+        protected AcceptOrderService $acceptOrderService,
+        protected PrepareOrderService $prepareOrderService,
+        protected ReadyOrderService $readyOrderService,
+        protected PickedUpOrderService $pickedUpOrderService,
+        protected OrderService $orderService
     ) {}
-    public function index()
-    {}
-    public function show($id)
-    {}
+
+    public function index() {}
+
+    public function show($id) {}
+
+    public function showUserOrders(Request $request)
+    {
+        if (! $request->user()) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $user = $request->user();
+        // json decode the redis cache and return it if it exists, else fetch from db and store in redis cache
+        $orderlist = Redis::get('user_orders_'.$user->id)->json_decode();
+        if ($orderlist == '') {
+            $orders = $user->orders()->with('items.addons')->paginate(10);
+            Redis::set('user_orders_'.$user->id, json_encode($orders));
+        }
+
+        return response()->json(['message' => 'User orders retrieved successfully', 'data' => $orders], 200);
+    }
+
+    public function showVendorOrders(Request $request)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'vendor') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+
+        $orders = $user->vendorOrders()->with('items.addons')->paginate(10);
+
+        return response()->json(['message' => 'Vendor orders retrieved successfully', 'data' => $orders], 200);
+    }
+
+    public function showAllOrders(Request $request)
+    {
+        if (! $request->user()) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $orders = Order::with('items.addons')->paginate(10);
+
+        return response()->json(['message' => 'All orders retrieved successfully', 'data' => $orders], 200);
+    }
+
     public function placeOrder(StoreOrderRequest $request)
     {
         if (! $request->user()) {
@@ -24,66 +78,87 @@ class OrderController extends Controller
         }
 
         $validatedData = $request->validated();
-    //    check if idempotency key exists in the database and if it does return a message saying that the order has already been placed
-        $existingOrder = Order::where('idempotency_key', $validatedData['idempotency_key'])->first();
-        if ($existingOrder) {
-            return response()->json(['message' => 'Order has already been placed'], 400);
-        }
 
+        $response = $this->orderService->createorder($validatedData);
 
-        //craete the order,order_item and order_item_addons in the database but status would be pending until the payment is successful
-        $Order = DB::transaction(function () use ($validatedData) {
-            $Order = Order::create([
-                'order_number'       => $validatedData['order_number'],
-                'customer_id'        => $validatedData['customer_id'],
-                'vendor_id'          => $validatedData['vendor_id'],
-                'rider_id'           => $validatedData['rider_id'] ?? null,
-                'subtotal'           => $validatedData['subtotal'],
-                'delivery_fee'       => $validatedData['delivery_fee'],
-                'service_fee'        => $validatedData['service_fee'],
-                'discount'           => $validatedData['discount'] ?? 0,
-                'total'              => $validatedData['total'],
-                'payment_method'     => $validatedData['payment_method'] ?? null,
-                'delivery_status'    => $validatedData['delivery_status'] ?? null,
-                'delivery_address'   => $validatedData['delivery_address'] ?? null,
-                'delivery_latitude'  => $validatedData['delivery_latitude'] ?? null,
-                'delivery_longitude' => $validatedData['delivery_longitude'] ?? null,
-                'status'             => 'pending', // set the status to pending until the payment is successful
-                'payment_status'     => 'pending', // set the payment status to pending until the payment is successful
-                'idempotency_key'    => $validatedData['idempotency_key'],
-                'notes'              => $validatedData['notes'] ?? null,
-            ]);
-            $Order_items = $Order->items()->createMany([
-                [
-                    'dish_id'  => $validatedData['dish_id'],
-                    'quantity' => $validatedData['quantity'],
-                    'price'    => $validatedData['price'],
-                    'name'     => $validatedData['name'],
-                ],
-            ]);
-            $Order_item_addons = $Order_items->first()->addons()->createMany([
-                [
-                    'addon_id' => $validatedData['addon_id'],
-                    'name'     => $validatedData['addon_name'],
-                    'price'    => $validatedData['addon_price'],
-                ],
-            ]);
-
-            return response()->json(['message' => 'Order placed successfully', 'order' => $Order], 201);
-
-        });
-        //create reference for the order to be used for payment verification
-        $Ref = 'ORD-' . strtoupper(uniqid());
-        //submit the order to the payment gateway and get the response
-        $response = $this->paymentGatewayService->initializePayment($Order, $Ref);
-        //if the payment method is card encrypt the card details and send to kora pay endpoints
-        //if the payment method is normal payment method hit the enpoints
-
-        // return response()->json(['message' => 'Order placed successfully', 'order' => $order], 201);
+        return response()->json(['message' => 'Order placed successfully', 'data' => $response], 201);
 
     }
-    public function update(Request $request, $id)
-    {}
-    public function destroy($id)
-    {}
+
+    public function update(Request $request, $id) {}
+
+    // controllers for actions like accept, prepare, ready, picked_up, delivered, cancelled
+    public function acceptOrder(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'vendor') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+
+        $response = $this->acceptOrderService->acceptOrder($id);
+
+        return response()->json(['message' => 'Order accepted successfully', 'data' => $response], 200);
+
+    }
+
+    public function cancelOrder(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'vendor') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+
+        $response = $this->cancelOrderService->cancelOrder($id);
+
+        return response()->json(['message' => 'Order accepted successfully', 'data' => $response], 200);
+    }
+
+    public function prepareOrder(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'vendor') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+        $response = $this->prepareOrderService->prepareOrder($id);
+
+        return response()->json(['message' => 'Preparing Order. ', 'data' => $response], 200);
+    }
+
+    public function readyOrder(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'vendor') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+
+        $this->readyOrderService->readyOrder($id);
+
+        return response()->json(['message' => 'Order is ready for pickup. '], 200);
+    }
+
+    // public function pickedUpOrder(Request $request, $id)
+    // {
+    //     $user = $request->user();
+    //     if (! $request->user() && $user->role !== 'rider') {
+    //         return response()->json(['message' => 'Unauthorized '], 401);
+    //     }
+    //     $response = $this->pickedUpOrderService->pickedUpOrder($id);
+
+    //     return response()->json(['message' => 'Order has been picked up. ', 'data' => $response], 200);
+    // }
+
+    public function deliveredOrder(Request $request, $id)
+    {
+        $user = $request->user();
+        if (! $request->user() && $user->role !== 'rider') {
+            return response()->json(['message' => 'Unauthorized '], 401);
+        }
+        $response = $this->deliveredOrderService->deliveredOrder($id);
+
+        return response()->json(['message' => 'Order has been delivered. ', 'data' => $response], 200);
+    }
+
+
+
+    public function destroy($id) {}
 }

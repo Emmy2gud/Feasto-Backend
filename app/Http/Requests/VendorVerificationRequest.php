@@ -23,11 +23,11 @@ class VendorVerificationRequest extends FormRequest
     public function rules(): array
     {
         return [
-           'nin'=> ['required','nullable', 'string', 'max:255'],
-           'bvn'=> ['required','nullable', 'string', 'max:255'],
-           'first_name'=> ['nullable', 'string', 'max:255'],
-              'last_name'=> ['nullable', 'string', 'max:255'],
-              'date_of_birth'=> ['nullable', 'date'],
+            'nin' => ['required', 'nullable', 'string', 'max:255'],
+            'bvn' => ['required', 'nullable', 'string', 'max:255'],
+            'first_name' => ['nullable', 'string', 'max:255'],
+            'last_name' => ['nullable', 'string', 'max:255'],
+            'date_of_birth' => ['nullable', 'date'],
         ];
     }
 }

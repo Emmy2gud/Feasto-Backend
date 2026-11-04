@@ -26,82 +26,77 @@ class VendorController extends Controller
         return response()->json(['vendor' => $vendor], 200);
     }
 
-public function store(StoreVendorRequest $request)
-{
-    if (! auth()->check()) {
-        return response()->json(['message' => 'Unauthorized'], 401);
-    }
+    public function store(StoreVendorRequest $request)
+    {
 
-    $user = auth()->user();
+        $user = auth()->user();
 
-    // Block if the user already has a vendor
-    if ($user->vendor()->exists()) {
+        // Block if the user already has a vendor
+        if ($user->vendor()->exists()) {
+            return response()->json([
+                'message' => 'You already have a vendor. Use the update endpoint instead.',
+            ], 409); // 409 Conflict
+        }
+
+        $validatedData = $request->validated();
+
+        $vendorData = [
+            'business_name' => $validatedData['business_name'],
+            // ... (no need for user_id here — the relationship sets it)
+            'business_description' => $validatedData['business_description'] ?? null,
+            'business_phone' => $validatedData['business_phone'] ?? null,
+            'business_email' => $validatedData['business_email'] ?? null,
+            'business_address' => $validatedData['business_address'] ?? null,
+            'city' => $validatedData['city'] ?? null,
+            'state' => $validatedData['state'] ?? null,
+            'country' => $validatedData['country'] ?? null,
+            'latitude' => $validatedData['latitude'] ?? null,
+            'longitude' => $validatedData['longitude'] ?? null,
+            'is_accepting_orders' => $validatedData['is_accepting_orders'] ?? true,
+            'status' => $validatedData['status'] ?? 'active',
+            'verification_status' => $validatedData['verification_status'] ?? 'pending',
+        ];
+
+        if ($request->hasFile('profile_picture')) {
+            $vendorData['profile_picture'] = $request->file('profile_picture')
+                ->store('vendors/profile-pictures', 'public');
+        }
+
+        if ($request->hasFile('business_document')) {
+            $vendorData['business_document'] = $request->file('business_document')
+                ->store('vendors/documents', 'public');
+        }
+
+        $vendor = DB::transaction(function () use ($user, $vendorData, $validatedData) {
+            $user->update(['role' => 'vendor']);
+
+            $vendor = $user->vendor()->create($vendorData);
+            $vendor->wallet()->create([
+                'balance' => 0.00,
+                'currency' => 'NGN',
+                'status' => 'active',
+            ]);
+
+            // Initial business hours — create once
+            $vendor->businessHours()->create([
+                'day_of_week' => $validatedData['day_of_week'] ?? 'monday',
+                'open_time' => $validatedData['open_time']
+                                  ?? $validatedData['opening_time']
+                                  ?? '09:00',
+                'close_time' => $validatedData['close_time']
+                                  ?? $validatedData['closing_time']
+                                  ?? '17:00',
+                'is_closed' => $validatedData['is_closed'] ?? false,
+            ]);
+
+            return $vendor->fresh(['businessHours']);
+        });
+
         return response()->json([
-            'message' => 'You already have a vendor. Use the update endpoint instead.',
-        ], 409); // 409 Conflict
+            'message' => 'Vendor created successfully',
+            'vendor' => $vendor,
+        ], 201);
     }
-
-    $validatedData = $request->validated();
-
-    $vendorData = [
-        'business_name' => $validatedData['business_name'],
-        // ... (no need for user_id here — the relationship sets it)
-        'business_description' => $validatedData['business_description'] ?? null,
-        'business_phone'       => $validatedData['business_phone'] ?? null,
-        'business_email'       => $validatedData['business_email'] ?? null,
-        'business_address'     => $validatedData['business_address'] ?? null,
-        'city'                 => $validatedData['city'] ?? null,
-        'state'                => $validatedData['state'] ?? null,
-        'country'              => $validatedData['country'] ?? null,
-        'latitude'             => $validatedData['latitude'] ?? null,
-        'longitude'            => $validatedData['longitude'] ?? null,
-        'is_accepting_orders'  => $validatedData['is_accepting_orders'] ?? true,
-        'status'               => $validatedData['status'] ?? 'active',
-        'verification_status'  => $validatedData['verification_status'] ?? 'pending',
-    ];
-
-    if ($request->hasFile('profile_picture')) {
-        $vendorData['profile_picture'] = $request->file('profile_picture')
-            ->store('vendors/profile-pictures', 'public');
-    }
-
-    if ($request->hasFile('business_document')) {
-        $vendorData['business_document'] = $request->file('business_document')
-            ->store('vendors/documents', 'public');
-    }
-
-    $vendor = DB::transaction(function () use ($user, $vendorData, $validatedData) {
-        $user->update(['role' => 'vendor']);
-
-
-        // CREATE only — never update here
-        $vendor = $user->vendor()->create($vendorData);
-        $vendor->wallet()->create([
-            'balance' => 0.00,
-            'currency' => 'NGN',
-            'status' => 'active',
-        ]);
-
-        // Initial business hours — create once
-        $vendor->businessHours()->create([
-            'day_of_week' => $validatedData['day_of_week'] ?? 'monday',
-            'open_time'   => $validatedData['open_time']
-                              ?? $validatedData['opening_time']
-                              ?? '09:00',
-            'close_time'  => $validatedData['close_time']
-                              ?? $validatedData['closing_time']
-                              ?? '17:00',
-            'is_closed'   => $validatedData['is_closed'] ?? false,
-        ]);
-
-        return $vendor->fresh(['businessHours']);
-    });
-
-    return response()->json([
-        'message' => 'Vendor created successfully',
-        'vendor'  => $vendor,
-    ], 201);
-}
 
     public function update(UpdateVendorRequest $request, $id)
     {

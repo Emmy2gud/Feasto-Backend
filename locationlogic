@@ -1,0 +1,116 @@
+
+import { useEffect } from "react";
+import api from "../lib/axios";
+
+export default function RiderLocationTracker({isOnline,isAvailable}) {
+  useEffect(() => {
+    if (!isOnline || !isAvailable) {
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      console.error("This device does not support GPS location.");
+      return;
+    }
+
+    const sendLocation = () => {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          try {
+            await api.post("/rider/location", {
+              latitude: position.coords.latitude,
+              longitude: position.coords.longitude,
+            });
+          } catch (error) {
+            console.error(
+              "Location update failed:",
+              error.response?.data || error.message
+            );
+          }
+        },
+        (error) => {
+          console.error("Unable to get location:", error.message);
+        },
+        {
+          enableHighAccuracy: true,
+          maximumAge: 5000,
+          timeout: 15000,
+        }
+      );
+    };
+
+    // Get the first location immediately.
+    sendLocation();
+
+    // Send another location every 10 seconds.
+    const intervalId = setInterval(sendLocation, 10000);
+
+    // Stop tracking when the rider goes offline.
+    return () => clearInterval(intervalId);
+  }, [isOnline, isAvailable]);
+
+  return null;
+}
+
+
+
+
+// use App\Events\DeliveryOfferBroadcast;
+
+// Add this method inside NearbyRiderService.
+
+// public function broadcastOffersForOrder(
+//     Order $order,
+//     float $radiusKm = 10
+// ): int {
+//     $riders = $this->findForOrder($order, $radiusKm);
+
+//     foreach ($riders as $rider) {
+//         DeliveryOfferBroadcast::dispatch(
+//             (int) $rider->id,
+//             (int) $order->id
+//         );
+//     }
+
+//     return $riders->count();
+// }
+
+
+// <?php
+
+// namespace App\Events;
+
+// use Illuminate\Broadcasting\PrivateChannel;
+// use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+// use Illuminate\Foundation\Events\Dispatchable;
+// use Illuminate\Queue\SerializesModels;
+
+// class DeliveryOfferBroadcast implements ShouldBroadcast
+// {
+//     use Dispatchable, SerializesModels;
+
+//     public function __construct(
+//         public int $riderId,
+//         public int $orderId
+//     ) {}
+
+//     public function broadcastOn(): array
+//     {
+//         return [
+//             new PrivateChannel('riders.' . $this->riderId),
+//         ];
+//     }
+
+//     public function broadcastAs(): string
+//     {
+//         return 'delivery.offer';
+//     }
+
+//     public function broadcastWith(): array
+//     {
+//         return [
+//             'order_id' => $this->orderId,
+//             'message' => 'A delivery is available near you.',
+//         ];
+//     }
+// }

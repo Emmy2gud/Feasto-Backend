@@ -5,6 +5,9 @@ use App\Http\Controllers\CartController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CheckoutController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\RiderController;
+use App\Http\Controllers\RiderVerificationController;
 use App\Http\Controllers\VendorController;
 use App\Http\Controllers\VendorVerificationController;
 use Illuminate\Http\Request;
@@ -26,14 +29,16 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword']);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('vendors', VendorController::class);
+    Route::apiResource('riders', RiderController::class);
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::post('/logout-all', [AuthController::class, 'logoutAll']);
-        Route::post('/vendors/{vendor}/verify', [VendorVerificationController::class, 'verify']);
+    Route::post('/vendors/{vendor}/verify', [VendorVerificationController::class, 'verify']);
 
+      Route::patch('/rider/online', [RiderController::class, 'online']);
 
-//category endpoints
+    // category endpoints
     Route::apiResource('categories', CategoryController::class);
-    Route::apiResource('products', \App\Http\Controllers\ProductController::class);
+    Route::apiResource('products', ProductController::class);
 
     Route::post('cart/add/{productId}', [CartController::class, 'addToCart']);
     Route::get('/cart', [CartController::class, 'showCart']);
@@ -41,9 +46,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/cart/update/{courseId}', [CartController::class, 'updateCart'])->name('cart.update');
     Route::delete('/cart/{course}', [CartController::class, 'removeFromCart']);
     Route::post('/cart/sync', [CartController::class, 'syncCart']);
-   Route::get('/vendors/{vendor}/checkout-summary', [CheckoutController::class, 'summary']);
-   Route::post('/orders', [CheckoutController::class, 'placeOrder']);
+    Route::get('/vendors/{vendor}/checkout-summary', [CheckoutController::class, 'summary']);
+    Route::post('/orders', [CheckoutController::class, 'placeOrder']);
     Route::post('/payments/initiate', [PaymentController::class, 'initiate']);
-    Route::get('/webhooks/flutterwave', [PaymentController::class, 'FlutterwaveWebhook'])
-        ->name('webhooks.flutterwave');
+
 });
+Route::get('/webhooks/korapay', [PaymentController::class, 'FlutterwaveWebhook'])
+    ->name('webhooks.flutterwave');
