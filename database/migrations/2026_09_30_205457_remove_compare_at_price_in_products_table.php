@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('products', function (Blueprint $table) {
-          $table->dropColumn('compare_at_price');
-        });
+        if (Schema::hasColumn('products', 'compare_at_price')) {
+            Schema::table('products', function (Blueprint $table) {
+                $table->dropColumn('compare_at_price');
+            });
+        }
     }
 
     /**

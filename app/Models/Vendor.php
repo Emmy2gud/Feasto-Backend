@@ -54,7 +54,7 @@ class Vendor extends Model
 
     public function wallet(): HasOne
     {
-        return $this->hasOne(Wallet::class);
+        return $this->hasOne(Wallet::class, 'user_id', 'user_id');
     } 
 
     public function orders(): HasMany

@@ -1,81 +1,91 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCategoryRequest;
 use App\Http\Requests\UpdateCategoryRequest;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
+use App\Models\Category;
+use App\Services\CategoryService;
+use Illuminate\Http\JsonResponse;
 
 class CategoryController extends Controller
 {
-    public function index()
-    {}
-    public function show($id)
-    {}
-    public function store(StoreCategoryRequest $request)
+    public function __construct(
+        protected CategoryService $categoryService
+    ) {}
+
+    /**
+     * Display a listing of categories.
+     */
+    public function index(): JsonResponse
     {
-        $user = auth()->user();
-        if (! $user->vendor) {
-            return response()->json([
-                'message' => 'You do not have a vendor associated with your account.',
-            ], 404);
-        }
+        $categories = $this->categoryService->getAll();
 
-        $validatedData = $request->validated();
-
-        $CategoryData = [
-            'name'        => $validatedData['name'],
-            'description' => $validatedData['description'] ?? null,
-            'status'      => $validatedData['status'] ?? 'active',
-        ];
-
-        if ($request->hasFile('image_url')) {
-            $CategoryData['image_url'] = $request->file('image_url')->store('categories/images', 'public');
-
-        }
-        $category = $user->vendor->categories()->create($CategoryData);
         return response()->json([
-            'message'  => 'Category created successfully.',
-            'category' => $category,
-        ], 201);
-
+            'message' => 'Categories retrieved successfully.',
+            'categories' => $categories,
+        ], 200);
     }
-    public function update(UpdateCategoryRequest $request, $id)
+
+    /**
+     * Display the specified category.
+     */
+    public function show(int $id): JsonResponse
     {
-        $user   = auth()->user();
-        $vendor = $user->vendor;
-        if ($user->id !== $vendor->user_id && $user->role !== 'admin') {
-            return response()->json(['message' => 'Forbidden'], 403);
-        }
-        $user = auth()->user();
-        if (! $user->vendor) {
-            return response()->json([
-                'message' => 'You do not have a vendor associated with your account.',
-            ], 404);
-        }
+        $category = $this->categoryService->getById($id);
 
-        $validatedData = $request->validated();
-
-        $CategoryData = [
-            'name'        => $validatedData['name'],
-            'description' => $validatedData['description'] ?? null,
-            'status'      => $validatedData['status'] ?? 'active',
-        ];
-              if ($request->hasFile('image_url')) {
-            if ($vendor->profile_picture && Storage::disk('public')->exists($vendor->image_url)) {
-                Storage::disk('public')->delete($vendor->image_url);
-            }
-
-                $CategoryData['image_url'] = $request->file('image_url')->store('categories/images', 'public');
-        }
-
-        $category = $user->vendor->categories()->create($CategoryData);
         return response()->json([
-            'message'  => 'Category created successfully.',
+            'message' => 'Category retrieved successfully.',
+            'category' => $category,
+        ], 200);
+    }
+
+    /**
+     * Store a newly created category.
+     */
+    public function store(StoreCategoryRequest $request): JsonResponse
+    {
+        $category = $this->categoryService->createCategory(
+            $request->validated(),
+            $request->file('image_url')
+        );
+
+        return response()->json([
+            'message' => 'Category created successfully.',
             'category' => $category,
         ], 201);
     }
-    public function destroy($id)
-    {}
+
+    /**
+     * Update the specified category.
+     */
+    public function update(UpdateCategoryRequest $request, int $id): JsonResponse
+    {
+        $category = Category::findOrFail($id);
+
+        $updatedCategory = $this->categoryService->updateCategory(
+            $category,
+            $request->validated(),
+            $request->file('image_url')
+        );
+
+        return response()->json([
+            'message' => 'Category updated successfully.',
+            'category' => $updatedCategory,
+        ], 200);
+    }
+
+    /**
+     * Remove the specified category.
+     */
+    public function destroy(int $id): JsonResponse
+    {
+        $category = Category::findOrFail($id);
+
+        $this->categoryService->deleteCategory($category);
+
+        return response()->json([
+            'message' => 'Category deleted successfully.',
+        ], 200);
+    }
 }

@@ -17,12 +17,23 @@ class PaymentWebhookServiceTest extends TestCase
     {
         putenv('FLW_SECRET_HASH=valid-secret');
 
+        $user = \App\Models\User::factory()->create();
+        $vendor = \App\Models\Vendor::create([
+            'user_id' => $user->id,
+            'business_name' => 'Test Vendor',
+            'status' => 'active',
+        ]);
+
         $order = Order::create([
             'order_number' => 'ORD-1001',
-            'customer_id' => 1,
-            'vendor_id' => 1,
+            'customer_id' => $user->id,
+            'vendor_id' => $vendor->id,
             'subtotal' => 1000,
             'delivery_fee' => 0,
+            'service_fee' => 0,
+            'delivery_address' => '123 Test St',
+            'delivery_latitude' => 6.5,
+            'delivery_longitude' => 3.3,
             'discount' => 0,
             'total' => 1000,
             'status' => 'pending',
@@ -31,7 +42,7 @@ class PaymentWebhookServiceTest extends TestCase
 
         $payment = Payment::create([
             'order_id' => $order->id,
-            'customer_id' => 1,
+            'customer_id' => $user->id,
             'amount' => 1000,
             'currency' => 'NGN',
             'payment_method' => 'card',

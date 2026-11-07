@@ -26,11 +26,11 @@ class VendorVerificationController extends Controller
         }
 
         $dto = new VendorVerificationDTO(
-            nin: $validatedData->nin,
-            bvn: $validatedData->bvn,
-            firstName: $validatedData->first_name,
-            lastName: $validatedData->last_name,
-            dateOfBirth: $validatedData->date_of_birth,
+            nin: $validatedData['nin'],
+            bvn: $validatedData['bvn'],
+            firstName: $validatedData['first_name'] ?? '',
+            lastName: $validatedData['last_name'] ?? '',
+            dateOfBirth: $validatedData['date_of_birth'] ?? '',
         );
 
         $verification = $this->verificationService->verify(

@@ -44,4 +44,14 @@ class Product extends Model
     {
         return $this->hasMany(ProductImage::class);
     }
+
+    public function addons(): HasMany
+    {
+        return $this->hasMany(ProductAddons::class);
+    }
+
+    public function productaddons(): HasMany
+    {
+        return $this->hasMany(ProductAddons::class);
+    }
 }

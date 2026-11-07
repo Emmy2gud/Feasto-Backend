@@ -2,106 +2,145 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
-use App\Models\Order;
+use App\Services\DeliveryService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class DeliveryController extends Controller
 {
+    public function __construct(
+        protected DeliveryService $deliveryService
+    ) {}
 
+    /**
+     * Helper to retrieve and authorize current authenticated rider.
+     */
+    protected function getAuthenticatedRider(Request $request)
+    {
+        $user = $request->user();
 
-public function acceptDelivery(Request $request)
-{
-    $validatedData = $request->validate([
-        'order_id' => ['required', 'integer', 'exists:orders,id'],
-    ]);
-
-    $user = $request->user();
-
-    if (! $user || $user->role !== 'rider') {
-        return response()->json([
-            'message' => 'Unauthorized',
-        ], 403);
-    }
-
-    $rider = $user->rider;
-
-    if (! $rider) {
-        return response()->json([
-            'message' => 'Rider profile not found.',
-        ], 404);
-    }
-
-    if (! $rider->is_online || ! $rider->is_available) {
-        return response()->json([
-            'message' => 'You are not available for deliveries.',
-        ], 422);
-    }
-
-    $accepted = DB::transaction(function () use ($validatedData, $rider) {
-
-        $order = Order::lockForUpdate()
-            ->findOrFail($validatedData['order_id']);
-        if ($order->status !== 'ready') {
-            return false;
+        if (! $user || ! $user->rider) {
+            abort(response()->json(['message' => 'Rider profile not found for this account.'], 403));
         }
 
-        $order->update([
-            'status' => 'accepted',
-            'rider_id' => $rider->id,
-            'accepted_at' => now(),
-        ]);
-
-        // Rider cannot receive another new delivery.
-        $rider->update([
-            'is_available' => false,
-        ]);
-
-        return true;
-    });
-
-    if (! $accepted) {
-        return response()->json([
-            'message' => 'This delivery has already been accepted by another rider.',
-        ], 409);
+        return $user->rider;
     }
 
-    return response()->json([
-        'message' => 'Delivery accepted successfully.',
-    ], 200);
-}
-
-
-    public function rejectdelivery(Request $request)
+    /**
+     * Get available orders waiting for rider pickup.
+     */
+    public function available(Request $request): JsonResponse
     {
-    $validatedData = $request->validate([
-        'order_id' => ['required', 'integer', 'exists:orders,id'],
-    ]);
+        $rider = $this->getAuthenticatedRider($request);
+        $deliveries = $this->deliveryService->getAvailableDeliveries(
+            $rider->latitude ? (float) $rider->latitude : null,
+            $rider->longitude ? (float) $rider->longitude : null
+        );
 
-    $user = $request->user();
-
-    if (! $user || $user->role !== 'rider') {
         return response()->json([
-            'message' => 'Unauthorized',
-        ], 403);
+            'message' => 'Available deliveries retrieved.',
+            'deliveries' => $deliveries,
+        ], 200);
     }
 
-    $rider = $user->rider;
+    /**
+     * Get rider's current active delivery.
+     */
+    public function active(Request $request): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+        $delivery = $this->deliveryService->getActiveDelivery($rider);
 
-    if (! $rider) {
         return response()->json([
-            'message' => 'Rider profile not found.',
-        ], 404);
+            'message' => 'Active delivery retrieved.',
+            'delivery' => $delivery,
+        ], 200);
     }
 
-    if (! $rider->is_online || ! $rider->is_available) {
+    /**
+     * Accept a delivery order.
+     */
+    public function acceptDelivery(Request $request): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+
+        $validated = $request->validate([
+            'order_id' => ['required', 'integer', 'exists:orders,id'],
+        ]);
+
+        $order = $this->deliveryService->acceptDelivery($rider, (int) $validated['order_id']);
+
         return response()->json([
-            'message' => 'You are not available for deliveries.',
-        ], 422);
+            'message' => 'Delivery accepted successfully.',
+            'data' => $order,
+        ], 200);
     }
-    return response()->json([
-        'message' => 'Delivery offer rejected.',
-    ]);
+
+    /**
+     * Rider picks up food from restaurant.
+     */
+    public function pickup(Request $request, int $orderId): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+        $order = $this->deliveryService->pickupDelivery($rider, $orderId);
+
+        return response()->json([
+            'message' => 'Order marked as picked up.',
+            'data' => $order,
+        ], 200);
+    }
+
+    /**
+     * Rider delivers order to customer.
+     */
+    public function complete(Request $request, int $orderId): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+        $order = $this->deliveryService->completeDelivery($rider, $orderId);
+
+        return response()->json([
+            'message' => 'Delivery completed successfully.',
+            'data' => $order,
+        ], 200);
+    }
+
+    /**
+     * Get rider past delivery history.
+     */
+    public function history(Request $request): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+        $history = $this->deliveryService->getDeliveryHistory($rider);
+
+        return response()->json([
+            'message' => 'Delivery history retrieved.',
+            'data' => $history,
+        ], 200);
+    }
+
+    /**
+     * Get rider earnings and stats dashboard.
+     */
+    public function earnings(Request $request): JsonResponse
+    {
+        $rider = $this->getAuthenticatedRider($request);
+        $summary = $this->deliveryService->getEarningsSummary($rider);
+
+        return response()->json([
+            'message' => 'Earnings summary retrieved.',
+            'data' => $summary,
+        ], 200);
+    }
+
+    /**
+     * Decline / reject a delivery offer.
+     */
+    public function rejectDelivery(Request $request): JsonResponse
+    {
+        $this->getAuthenticatedRider($request);
+
+        return response()->json([
+            'message' => 'Delivery offer rejected.',
+        ], 200);
     }
 }

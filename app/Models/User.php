@@ -20,13 +20,27 @@ class User extends Authenticatable
      * @var list<string>
      */
     protected $fillable = [
-        'name',
         'fullname',
         'phone_number',
         'email',
         'password',
         'email_verified_at',
+        'role',
+        'status',
+        'address',
+        'contry',
+        'profile_picture',
     ];
+
+    public function getNameAttribute(): ?string
+    {
+        return $this->attributes['fullname'] ?? null;
+    }
+
+    public function setNameAttribute($value): void
+    {
+        $this->attributes['fullname'] = $value;
+    }
 
     /**
      * The attributes that should be hidden for serialization.
@@ -64,5 +78,15 @@ class User extends Authenticatable
     public function vendor()
     {
         return $this->hasOne(Vendor::class);
+    }
+
+    public function orders()
+    {
+        return $this->hasMany(Order::class, 'customer_id');
+    }
+
+    public function vendorOrders()
+    {
+        return $this->hasManyThrough(Order::class, Vendor::class, 'user_id', 'vendor_id');
     }
 }

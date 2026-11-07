@@ -5,13 +5,12 @@ use App\DTOs\RiderVerificationDTO;
 use App\Http\Requests\RiderRequest;
 use App\Models\Rider;
 use App\Services\RiderService;
-use Illuminate\Support\Facades\Request;
+use Illuminate\Http\Request;
 
 class RiderController extends Controller
 {
     public function __construct(
-        protected RiderService $riderService,
-        protected RiderVerificationDTO $payloadDto
+        protected RiderService $riderService
     ) {}
 
     public function index()
@@ -40,7 +39,6 @@ class RiderController extends Controller
 
     public function store(RiderRequest $request)
     {
-
         $user = auth()->user();
 
         if ($user->rider()->exists()) {
@@ -54,10 +52,21 @@ class RiderController extends Controller
             ? $request->file('documents')->store('rider/verification', 'public')
             : null;
 
+        $dto = null;
+        if (! empty($validatedData['nin']) && ! empty($validatedData['bvn'])) {
+            $dto = new RiderVerificationDTO(
+                nin: $validatedData['nin'],
+                bvn: $validatedData['bvn'],
+                firstName: $validatedData['first_name'] ?? '',
+                lastName: $validatedData['last_name'] ?? '',
+                dateOfBirth: $validatedData['date_of_birth'] ?? '',
+            );
+        }
+
         $rider = $this->riderService->create(
             $user,
             $this->riderService->buildPayload($validatedData, $documentPath),
-            $this->payloadDto
+            $dto
         );
 
         return response()->json([
@@ -81,7 +90,7 @@ class RiderController extends Controller
                 'message' => 'Forbidden',
             ], 403);
         }
-        if (! $rider ) {
+        if (! $rider) {
             return response()->json([
                 'message' => 'Rider profile not found for the authenticated user.',
             ], 404);
@@ -93,18 +102,15 @@ class RiderController extends Controller
             ], 403);
         }
 
-        // Toggle the current state
-        $rider->is_online = ! $rider->is_online;
+        // Toggle online status
+        $newStatus = ! $rider->is_online;
+        $rider->is_online = $newStatus;
+        $rider->is_available = $newStatus;
 
-        if (!$rider->is_online ) {
+        if ($newStatus) {
             $rider->latitude            = $validatedData['latitude'];
             $rider->longitude           = $validatedData['longitude'];
-            $rider->is_available        = true;
             $rider->location_updated_at = now();
-            $rider->is_online = true;
-        } else {
-            $rider->is_available = false;
-            $rider->is_online = false;
         }
 
         $rider->save();
@@ -113,7 +119,6 @@ class RiderController extends Controller
             'message' => $rider->is_online
                 ? 'Rider is now online'
                 : 'Rider is now offline',
-
             'data'    => $rider,
         ], 200);
     }

@@ -4,161 +4,180 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreOrderRequest;
 use App\Models\Order;
-use App\Services\Orders\AcceptOrderService;
-use App\Services\Orders\CancelOrderService;
-use App\Services\Orders\DeliveredOrderService;
-use App\Services\Orders\PickedUpOrderService;
-use App\Services\Orders\PrepareOrderService;
-use App\Services\Orders\ReadyOrderService;
 use App\Services\OrderService;
-use DB;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Redis;
 
 class OrderController extends Controller
 {
     public function __construct(
-        protected DeliveredOrderService $deliveredOrderService,
-        protected CancelOrderService $cancelOrderService,
-        protected AcceptOrderService $acceptOrderService,
-        protected PrepareOrderService $prepareOrderService,
-        protected ReadyOrderService $readyOrderService,
-        protected PickedUpOrderService $pickedUpOrderService,
         protected OrderService $orderService
     ) {}
 
-    public function index() {}
-
-    public function show($id) {}
-
-    public function showUserOrders(Request $request)
-    {
-        if (! $request->user()) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
-
-        $user = $request->user();
-        // json decode the redis cache and return it if it exists, else fetch from db and store in redis cache
-        $orderlist = Redis::get('user_orders_'.$user->id)->json_decode();
-        if ($orderlist == '') {
-            $orders = $user->orders()->with('items.addons')->paginate(10);
-            Redis::set('user_orders_'.$user->id, json_encode($orders));
-        }
-
-        return response()->json(['message' => 'User orders retrieved successfully', 'data' => $orders], 200);
-    }
-
-    public function showVendorOrders(Request $request)
+    /**
+     * Display a listing of orders for authenticated user.
+     */
+    public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $request->user() && $user->role !== 'vendor') {
-            return response()->json(['message' => 'Unauthorized '], 401);
+
+        if ($user->vendor) {
+            $orders = $this->orderService->getVendorOrders($user->vendor);
+        } else {
+            $orders = $this->orderService->getUserOrders($user);
         }
 
-        $orders = $user->vendorOrders()->with('items.addons')->paginate(10);
-
-        return response()->json(['message' => 'Vendor orders retrieved successfully', 'data' => $orders], 200);
+        return response()->json([
+            'message' => 'Orders retrieved successfully.',
+            'orders' => $orders,
+        ], 200);
     }
 
-    public function showAllOrders(Request $request)
+    /**
+     * Display single order details.
+     */
+    public function show(int $id): JsonResponse
     {
-        if (! $request->user()) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+        $order = $this->orderService->getById($id);
 
-        $orders = Order::with('items.addons')->paginate(10);
-
-        return response()->json(['message' => 'All orders retrieved successfully', 'data' => $orders], 200);
+        return response()->json([
+            'message' => 'Order retrieved successfully.',
+            'order' => $order,
+        ], 200);
     }
 
-    public function placeOrder(StoreOrderRequest $request)
+    /**
+     * Get orders placed by current user.
+     */
+    public function showUserOrders(Request $request): JsonResponse
     {
-        if (! $request->user()) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+        $orders = $this->orderService->getUserOrders($request->user());
 
-        $validatedData = $request->validated();
-
-        $response = $this->orderService->createorder($validatedData);
-
-        return response()->json(['message' => 'Order placed successfully', 'data' => $response], 201);
-
+        return response()->json([
+            'message' => 'User orders retrieved successfully.',
+            'data' => $orders,
+        ], 200);
     }
 
-    public function update(Request $request, $id) {}
-
-    // controllers for actions like accept, prepare, ready, picked_up, delivered, cancelled
-    public function acceptOrder(Request $request, $id)
-    {
-        $user = $request->user();
-        if (! $request->user() && $user->role !== 'vendor') {
-            return response()->json(['message' => 'Unauthorized '], 401);
-        }
-
-        $response = $this->acceptOrderService->acceptOrder($id);
-
-        return response()->json(['message' => 'Order accepted successfully', 'data' => $response], 200);
-
-    }
-
-    public function cancelOrder(Request $request, $id)
+    /**
+     * Get orders for the authenticated vendor.
+     */
+    public function showVendorOrders(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (! $request->user() && $user->role !== 'vendor') {
-            return response()->json(['message' => 'Unauthorized '], 401);
+
+        if (! $user->vendor) {
+            return response()->json(['message' => 'Vendor profile not found.'], 403);
         }
 
-        $response = $this->cancelOrderService->cancelOrder($id);
+        $orders = $this->orderService->getVendorOrders($user->vendor);
 
-        return response()->json(['message' => 'Order accepted successfully', 'data' => $response], 200);
+        return response()->json([
+            'message' => 'Vendor orders retrieved successfully.',
+            'data' => $orders,
+        ], 200);
     }
 
-    public function prepareOrder(Request $request, $id)
+    /**
+     * Get all platform orders (admin).
+     */
+    public function showAllOrders(Request $request): JsonResponse
+    {
+        $orders = $this->orderService->getAllOrders();
+
+        return response()->json([
+            'message' => 'All orders retrieved successfully.',
+            'data' => $orders,
+        ], 200);
+    }
+
+    /**
+     * Customer places an order.
+     */
+    public function placeOrder(StoreOrderRequest $request): JsonResponse
+    {
+        $result = $this->orderService->createOrder(
+            $request->user(),
+            $request->validated()
+        );
+
+        return response()->json($result, 201);
+    }
+
+    /**
+     * Vendor accepts an incoming order.
+     */
+    public function acceptOrder(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (! $request->user() && $user->role !== 'vendor') {
-            return response()->json(['message' => 'Unauthorized '], 401);
-        }
-        $response = $this->prepareOrderService->prepareOrder($id);
 
-        return response()->json(['message' => 'Preparing Order. ', 'data' => $response], 200);
+        if (! $user->vendor) {
+            return response()->json(['message' => 'Unauthorized. Must be a vendor.'], 403);
+        }
+
+        $order = $this->orderService->updateVendorOrderStatus($id, $user->vendor, 'accepted');
+
+        return response()->json([
+            'message' => 'Order accepted successfully.',
+            'data' => $order,
+        ], 200);
     }
 
-    public function readyOrder(Request $request, $id)
+    /**
+     * Vendor starts preparing an order.
+     */
+    public function prepareOrder(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (! $request->user() && $user->role !== 'vendor') {
-            return response()->json(['message' => 'Unauthorized '], 401);
+
+        if (! $user->vendor) {
+            return response()->json(['message' => 'Unauthorized. Must be a vendor.'], 403);
         }
 
-        $this->readyOrderService->readyOrder($id);
+        $order = $this->orderService->updateVendorOrderStatus($id, $user->vendor, 'preparing');
 
-        return response()->json(['message' => 'Order is ready for pickup. '], 200);
+        return response()->json([
+            'message' => 'Order is now being prepared.',
+            'data' => $order,
+        ], 200);
     }
 
-    // public function pickedUpOrder(Request $request, $id)
-    // {
-    //     $user = $request->user();
-    //     if (! $request->user() && $user->role !== 'rider') {
-    //         return response()->json(['message' => 'Unauthorized '], 401);
-    //     }
-    //     $response = $this->pickedUpOrderService->pickedUpOrder($id);
-
-    //     return response()->json(['message' => 'Order has been picked up. ', 'data' => $response], 200);
-    // }
-
-    public function deliveredOrder(Request $request, $id)
+    /**
+     * Vendor marks order as ready for pickup.
+     */
+    public function readyOrder(Request $request, int $id): JsonResponse
     {
         $user = $request->user();
-        if (! $request->user() && $user->role !== 'rider') {
-            return response()->json(['message' => 'Unauthorized '], 401);
-        }
-        $response = $this->deliveredOrderService->deliveredOrder($id);
 
-        return response()->json(['message' => 'Order has been delivered. ', 'data' => $response], 200);
+        if (! $user->vendor) {
+            return response()->json(['message' => 'Unauthorized. Must be a vendor.'], 403);
+        }
+
+        $order = $this->orderService->updateVendorOrderStatus($id, $user->vendor, 'ready');
+
+        return response()->json([
+            'message' => 'Order is ready for pickup.',
+            'data' => $order,
+        ], 200);
     }
 
+    /**
+     * Vendor or customer cancels order.
+     */
+    public function cancelOrder(Request $request, int $id): JsonResponse
+    {
+        $user = $request->user();
 
+        if ($user->vendor) {
+            $order = $this->orderService->updateVendorOrderStatus($id, $user->vendor, 'cancelled');
+        } else {
+            $order = Order::where('id', $id)->where('customer_id', $user->id)->firstOrFail();
+            $order->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+        }
 
-    public function destroy($id) {}
+        return response()->json([
+            'message' => 'Order cancelled successfully.',
+            'data' => $order,
+        ], 200);
+    }
 }

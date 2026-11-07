@@ -1,107 +1,107 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
-use App\Models\Cart;
-use App\Models\CartItem;
-use App\Models\CartItemAddons;
-use App\Models\Product;
-use App\Models\ProductAddons;
-use App\Models\Vendor;
+use App\Services\CartService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
 class CartController extends Controller
 {
-public function addToCart(Request $request)
-{
-    $validated = $request->validate([
-        'product_id' => 'required|exists:products,id',
-        'addon_ids'  => 'array',
-        'addon_ids.*' => 'exists:addons,id',
-        'vendor_id' => 'required|exists:vendors,id',
-    ]);
+    public function __construct(
+        protected CartService $cartService
+    ) {}
 
-    $product = Product::findOrFail($validated['product_id'])->where('vendor_id', $validated['vendor_id'])->firstOrFail();
-    $chosenAddonIds = collect($validated['addon_ids'] ?? [])->sort()->values();
+    /**
+     * Display the authenticated user's cart.
+     */
+    public function showCart(Request $request): JsonResponse
+    {
+        $vendorId = $request->query('vendor_id');
+        $cart = $this->cartService->getCart($request->user(), $vendorId ? (int) $vendorId : null);
 
-    $cart = Cart::firstOrCreate(['user_id' => Auth::id()]);
-
-    $existingItem = $cart->items()
-        ->where('product_id', $product->id)
-        ->get()
-        ->first(function ($item) use ($chosenAddonIds) {
-            $itemAddonIds = $item->addons->pluck('addon_id')->sort()->values();
-            return $itemAddonIds->toArray() === $chosenAddonIds->toArray();
-            //  return $itemAddonIds->equalTo($chosenAddonIds);
-        });
-
-    if ($existingItem) {
-        $existingItem->increment('quantity');
-        return response()->json(['message' => 'Quantity updated']);
+        return response()->json($cart, 200);
     }
 
-    // no match found — create a fresh cart item
-    $cartItem = $cart->items()->create([
-        'product_id' => $product->id,
-        'name'       => $product->name,
-        'price'      => $product->price,
-        'quantity'   => 1,
-    ]);
-
-    foreach ($chosenAddonIds as $addonId) {
-        $addon = ProductAddons::findOrFail($addonId);
-        $cartItem->addons()->create([
-            'addon_id' => $addon->id,
-            'name'     => $addon->name,
-            'price'    => $addon->price,
+    /**
+     * Add a product to the cart.
+     */
+    public function addItem(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'quantity' => ['nullable', 'integer', 'min:1'],
+            'addon_ids' => ['nullable', 'array'],
+            'addon_ids.*' => ['integer', 'exists:product_addons,id'],
         ]);
+
+        $result = $this->cartService->addItem(
+            $request->user(),
+            (int) $validated['product_id'],
+            (int) ($validated['quantity'] ?? 1),
+            $validated['addon_ids'] ?? []
+        );
+
+        return response()->json($result, 200);
     }
 
-    return response()->json(['message' => 'Product added to cart successfully.']);
-}
-    public function showCart()
+    /**
+     * Add item via route parameter (for backward compatibility).
+     */
+    public function addToCart(Request $request, int $productId): JsonResponse
     {
-        if (Auth::check()) {
-            //get all cart items for the authenticated user for a particular vendor  because each vendor has a cart item for their products
-            $cart            = Cart::where('user_id', Auth::id())->first();
-            $vendorId        = request()->query('vendor_id');
-            $vendorCartItems = $cart->items()->where('vendor_id',  $vendorId  )->get();
+        $validated = $request->validate([
+            'quantity' => ['nullable', 'integer', 'min:1'],
+            'addon_ids' => ['nullable', 'array'],
+            'addon_ids.*' => ['integer', 'exists:product_addons,id'],
+        ]);
 
-            return response()->json($vendorCartItems);
-        }
+        $result = $this->cartService->addItem(
+            $request->user(),
+            $productId,
+            (int) ($validated['quantity'] ?? 1),
+            $validated['addon_ids'] ?? []
+        );
 
-        $cart = session()->get('cart', []);
-        return response()->json($cart);
+        return response()->json($result, 200);
     }
 
-    public function removeFromCart($productId)
+    /**
+     * Update item quantity in the cart.
+     */
+    public function updateQuantity(Request $request, int $id): JsonResponse
     {
-        if (Auth::check()) {
-            $cart = Cart::where('user_id', Auth::id())->first();
-            if ($cart) {
-                $cartItem = $cart->items()->where('product_id', $productId)->first();
-                if ($cartItem) {
-                    CartItem::where('id', $cartItem->id)->delete();
-                }
-            }
-        }
+        $validated = $request->validate([
+            'quantity' => ['required', 'integer', 'min:0'],
+        ]);
 
-        return response()->json(['message' => 'Product removed from cart successfully.']);
+        $result = $this->cartService->updateQuantity(
+            $request->user(),
+            $id,
+            (int) $validated['quantity']
+        );
+
+        return response()->json($result, 200);
     }
 
-
-
-
-    public function clearCart()
+    /**
+     * Remove an item from the cart.
+     */
+    public function removeItem(Request $request, int $id): JsonResponse
     {
-        if (Auth::check()) {
-            $cart = Cart::where('user_id', Auth::id())->first();
-            if ($cart) {
-                $cart->items()->delete();
-            }
-        }
+        $result = $this->cartService->removeItem($request->user(), $id);
 
-        return response()->json(['message' => 'Cart cleared successfully.']);
+        return response()->json($result, 200);
+    }
+
+    /**
+     * Clear all cart items.
+     */
+    public function clearCart(Request $request): JsonResponse
+    {
+        $vendorId = $request->query('vendor_id');
+        $result = $this->cartService->clearCart($request->user(), $vendorId ? (int) $vendorId : null);
+
+        return response()->json($result, 200);
     }
 }

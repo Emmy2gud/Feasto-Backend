@@ -3,80 +3,174 @@
 namespace App\Services;
 
 use App\Models\Order;
-use App\Services\Api\PaymentGatewayService;
-use DB;
+use App\Models\User;
+use App\Models\Vendor;
+use App\Services\PaymentService;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class OrderService
 {
     public function __construct(
-        protected PaymentGatewayService $paymentGatewayService,
-        protected OrderService $orderService
+        protected PaymentService $paymentService
     ) {}
 
-    public function createorder(array $validatedData)
+    /**
+     * Get paginated orders for a customer.
+     */
+    public function getUserOrders(User $user, int $perPage = 10): LengthAwarePaginator
     {
-        //    check if idempotency key exists in the database and if it does return a message saying that the order has already been placed
-        $existingOrder = Order::where('idempotency_key', $validatedData['idempotency_key'])->first();
-        if ($existingOrder) {
-            return response()->json(['message' => 'Order has already been placed'], 400);
-        }
-
-        // craete the order,order_item and order_item_addons in the database but status would be pending until the payment is successful
-        $Order = DB::transaction(function () use ($validatedData) {
-            $Order = Order::create([
-                'order_number' => $validatedData['order_number'],
-                'customer_id' => $validatedData['customer_id'],
-                'vendor_id' => $validatedData['vendor_id'],
-                'rider_id' => $validatedData['rider_id'] ?? null,
-                'subtotal' => $validatedData['subtotal'],
-                'delivery_fee' => $validatedData['delivery_fee'],
-                'service_fee' => $validatedData['service_fee'],
-                'discount' => $validatedData['discount'] ?? 0,
-                'total' => $validatedData['total'],
-                'payment_method' => $validatedData['payment_method'] ?? null,
-                'delivery_status' => $validatedData['delivery_status'] ?? null,
-                'delivery_address' => $validatedData['delivery_address'] ?? null,
-                'delivery_latitude' => $validatedData['delivery_latitude'] ?? null,
-                'delivery_longitude' => $validatedData['delivery_longitude'] ?? null,
-                'status' => 'pending', // set the status to pending until the payment is successful
-                'payment_status' => 'pending', // set the payment status to pending until the payment is successful
-                'idempotency_key' => $validatedData['idempotency_key'],
-                'notes' => $validatedData['notes'] ?? null,
-            ]);
-            $Order_items = $Order->items()->createMany([
-                [
-                    'dish_id' => $validatedData['dish_id'],
-                    'quantity' => $validatedData['quantity'],
-                    'price' => $validatedData['price'],
-                    'name' => $validatedData['name'],
-                ],
-            ]);
-            $Order_item_addons = $Order_items->first()->addons()->createMany([
-                [
-                    'addon_id' => $validatedData['addon_id'],
-                    'name' => $validatedData['addon_name'],
-                    'price' => $validatedData['addon_price'],
-                ],
-            ]);
-
-            return response()->json(['message' => 'Order placed successfully', 'order' => $Order], 201);
-
-        });
-        // create reference for the order to be used for payment verification
-        $Ref = 'ORD-'.strtoupper(uniqid());
-        // submit the order to the payment gateway and get the response
-        $response = $this->paymentGatewayService->initializePayment($Order, $Ref);
-
-        // if the payment method is card encrypt the card details and send to kora pay endpoints
-        // if the payment method is normal payment method hit the enpoints
-        return response()->json(['message' => 'Order placed successfully', 'order' => $Order, 'payment_gateway_response' => $response], 201);
+        return Order::with(['items.addons', 'vendor', 'rider'])
+            ->where('customer_id', $user->id)
+            ->latest()
+            ->paginate($perPage);
     }
 
-    public function update(int $id, array $data): array
+    /**
+     * Get paginated orders for a vendor.
+     */
+    public function getVendorOrders(Vendor $vendor, int $perPage = 10): LengthAwarePaginator
     {
+        return Order::with(['items.addons', 'customer', 'rider'])
+            ->where('vendor_id', $vendor->id)
+            ->latest()
+            ->paginate($perPage);
+    }
+
+    /**
+     * Get all orders (for admin/monitoring).
+     */
+    public function getAllOrders(int $perPage = 10): LengthAwarePaginator
+    {
+        return Order::with(['items.addons', 'customer', 'vendor', 'rider'])
+            ->latest()
+            ->paginate($perPage);
+    }
+
+    /**
+     * Get single order by ID with relationships.
+     */
+    public function getById(int $id): Order
+    {
+        return Order::with(['items.addons', 'customer', 'vendor', 'rider'])->findOrFail($id);
+    }
+
+    /**
+     * Create a new order with items, addons, and initialize payment.
+     */
+    public function createOrder(User $customer, array $data): array
+    {
+        // Check idempotency key if supplied
+        if (! empty($data['idempotency_key'])) {
+            $existing = Order::where('idempotency_key', $data['idempotency_key'])->first();
+            if ($existing) {
+                return [
+                    'message' => 'Order already exists with this idempotency key.',
+                    'order' => $existing->load('items.addons'),
+                ];
+            }
+        }
+
+        $orderNumber = $data['order_number'] ?? ('ORD-' . strtoupper(uniqid()));
+
+        $order = DB::transaction(function () use ($customer, $data, $orderNumber) {
+            $order = Order::create([
+                'order_number' => $orderNumber,
+                'idempotency_key' => $data['idempotency_key'] ?? null,
+                'customer_id' => $customer->id,
+                'vendor_id' => $data['vendor_id'],
+                'subtotal' => $data['subtotal'],
+                'delivery_fee' => $data['delivery_fee'] ?? 0,
+                'service_fee' => $data['service_fee'] ?? 0,
+                'tip' => $data['tip'] ?? 0,
+                'discount' => $data['discount'] ?? 0,
+                'total' => $data['total'],
+                'status' => 'pending',
+                'payment_status' => 'pending',
+                'payment_method' => $data['payment_method'] ?? 'card',
+                'delivery_address' => $data['delivery_address'] ?? 'Customer Address',
+                'delivery_latitude' => $data['delivery_latitude'] ?? 0.0,
+                'delivery_longitude' => $data['delivery_longitude'] ?? 0.0,
+                'distance_km' => $data['distance_km'] ?? null,
+                'dropoff_preference' => $data['dropoff_preference'] ?? null,
+                'recipient_phone' => $data['recipient_phone'] ?? $customer->phone_number,
+                'notes' => $data['notes'] ?? null,
+                'placed_at' => now(),
+            ]);
+
+            // Save order items if passed as an array
+            $items = $data['items'] ?? [];
+            if (empty($items) && isset($data['dish_id'])) {
+                $items = [[
+                    'dish_id' => $data['dish_id'],
+                    'name' => $data['name'] ?? 'Dish Item',
+                    'price' => $data['price'] ?? $data['subtotal'],
+                    'quantity' => $data['quantity'] ?? 1,
+                    'addons' => isset($data['addon_name']) ? [[
+                        'addon_id' => $data['addon_id'] ?? null,
+                        'name' => $data['addon_name'],
+                        'price' => $data['addon_price'] ?? 0,
+                    ]] : [],
+                ]];
+            }
+
+            foreach ($items as $itemData) {
+                $item = $order->items()->create([
+                    'dish_id' => $itemData['dish_id'] ?? null,
+                    'name' => $itemData['name'],
+                    'price' => $itemData['price'],
+                    'quantity' => $itemData['quantity'] ?? 1,
+                    'special_instructions' => $itemData['special_instructions'] ?? null,
+                ]);
+
+                if (! empty($itemData['addons'])) {
+                    foreach ($itemData['addons'] as $addon) {
+                        $item->addons()->create([
+                            'addon_id' => $addon['addon_id'] ?? null,
+                            'name' => $addon['name'],
+                            'price' => $addon['price'] ?? 0,
+                        ]);
+                    }
+                }
+            }
+
+            return $order->fresh(['items.addons', 'vendor']);
+        });
+
+        // Initialize payment
+        $paymentData = $this->paymentService->initiatePayment($order, $data['payment_method'] ?? 'card');
+
         return [
-            'id' => $id,
-            ...$data,
+            'message' => 'Order placed successfully.',
+            'order' => $order,
+            'payment' => $paymentData,
         ];
+    }
+
+    /**
+     * Vendor transitions order status.
+     */
+    public function updateVendorOrderStatus(int $orderId, Vendor $vendor, string $newStatus): Order
+    {
+        $order = Order::where('id', $orderId)
+            ->where('vendor_id', $vendor->id)
+            ->firstOrFail();
+
+        $allowedStatuses = ['accepted', 'preparing', 'ready', 'cancelled'];
+        if (! in_array($newStatus, $allowedStatuses, true)) {
+            throw ValidationException::withMessages(['status' => 'Invalid status transition.']);
+        }
+
+        $updateData = ['status' => $newStatus];
+        if ($newStatus === 'accepted') {
+            $updateData['accepted_at'] = now();
+        } elseif ($newStatus === 'cancelled') {
+            $updateData['cancelled_at'] = now();
+        }
+
+        $order->update($updateData);
+
+        return $order->fresh(['items.addons', 'customer']);
     }
 }

@@ -1,157 +1,123 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreProductRequest;
 use App\Http\Requests\UpdateProductRequest;
 use App\Models\Product;
 use App\Models\Vendor;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use User;
+use App\Services\ProductService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
-    public function index()
-    {
-        //display all products buy a vendor
-     $vendor =Vendor::find(auth()->user()->vendor->id);
-     $products = $vendor->products()->with('productaddons')->paginate(10);
-     return response()->json(['products' => $products], 200);
+    public function __construct(
+        protected ProductService $productService
+    ) {}
 
+    /**
+     * Display a paginated listing of products.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $products = $this->productService->getAll($request->all());
+
+        return response()->json([
+            'message' => 'Products retrieved successfully.',
+            'products' => $products,
+        ], 200);
     }
-    public function show($id)
-    {
 
+    /**
+     * Display the specified product.
+     */
+    public function show(int $id): JsonResponse
+    {
+        $product = $this->productService->getById($id);
+
+        return response()->json([
+            'message' => 'Product retrieved successfully.',
+            'product' => $product,
+        ], 200);
     }
-    public function store(StoreProductRequest $request)
+
+    /**
+     * Display all products belonging to a vendor.
+     */
+    public function getProductsByVendor(int $vendorId): JsonResponse
     {
-        //stage 1: validate the request data
-        $validatedData = $request->validated();
-        //stage 2:check if the authenticated user is a vendor
-        if (! auth()->check()) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+        $products = $this->productService->getVendorProducts($vendorId);
 
-        $user = auth()->user();
+        return response()->json([
+            'message' => 'Vendor products retrieved successfully.',
+            'products' => $products,
+        ], 200);
+    }
 
-        if (! $user->vendor()->exists()) {
+    /**
+     * Store a newly created product for the authenticated vendor.
+     */
+    public function store(StoreProductRequest $request): JsonResponse
+    {
+        $user = $request->user();
+
+        if (! $user->vendor) {
             return response()->json([
-                'message' => 'You do not have a vendor associated with your account. Please create a vendor first before adding products.',
-            ], 409);
+                'message' => 'You do not have a vendor profile. Please create a vendor first before adding products.',
+            ], 403);
         }
 
-        //stage3:get product images and other data from the request and prepare it for storage
-        $productData = [
-
-            'vendor_id'      => $user->vendor->id,
-            'category_id'    => $validatedData['category_id'] ?? null,
-            'name'           => $validatedData['name'],
-            'description'    => $validatedData['description'] ?? null,
-            'price'          => $validatedData['price'],
-            'discount_price' => $validatedData['discount_price'] ?? null,
-            'is_available'   => $validatedData['is_available'] ?? true,
-            'status'         => $validatedData['status'] ?? 'active',
-
-        ];
-
-        if ($request->hasFile('image')) {
-            $productData['image'] = $request->file('image')
-                ->store('vendors/products', 'public');
-        }
-
-        //stage4: create the product and associate it with the vendor
-
-        $product = DB::transaction(function () use ($user, $productData, $validatedData) {
-            $vendor = Vendor::find($user->vendor->id);
-
-            // CREATE only — never update here
-            $vendor->products()->create($productData);
-
-            // Initial business hours — create once
-            $addons = $vendor->productaddons()->create([
-                'name'         => $validatedData['addon_name'],
-                'price'        => $validatedData['addon_price'],
-                'is_available' => $validatedData['is_available'] ?? true,
-            ]);
-
-            return $addons;
-        });
+        $product = $this->productService->createProduct(
+            $user->vendor,
+            $request->validated(),
+            $request->file('image')
+        );
 
         return response()->json([
             'message' => 'Product created successfully.',
-            'data'    => $product,
+            'data' => $product,
         ], 201);
     }
-    public function update(UpdateProductRequest $request, $id)
+
+    /**
+     * Update the specified product.
+     */
+    public function update(UpdateProductRequest $request, int $id): JsonResponse
     {
-        $product =Product::findOrFail($id);
+        $product = Product::findOrFail($id);
+        $user = $request->user();
 
-        //stage 1: validate the request data
-        $validatedData = $request->validated();
-        //stage 2:check if the authenticated user is a vendor
-        if (! auth()->check()) {
-            return response()->json(['message' => 'Unauthorized'], 401);
+        if (! $user->vendor || ($product->vendor_id !== $user->vendor->id && $user->role !== 'admin')) {
+            return response()->json(['message' => 'Unauthorized to update this product.'], 403);
         }
 
-        $user = auth()->user();
-
-        if (! $user->vendor()->exists()) {
-            return response()->json([
-                'message' => 'You do not have a vendor associated with your account. Please create a vendor first before adding products.',
-            ], 409);
-        }
-
-        //stage3:get product images and other data from the request and prepare it for storage
-        $productData = [
-
-            'name'           => $validatedData['name'],
-            'description'    => $validatedData['description'] ?? null,
-            'price'          => $validatedData['price'],
-            'discount_price' => $validatedData['discount_price'] ?? null,
-            'is_available'   => $validatedData['is_available'] ?? true,
-            'status'         => $validatedData['status'] ?? 'active',
-
-        ];
-
-        if ($request->hasFile('image')) {
-
-            if ($product->image && Storage::disk('public')->exists($product->image)) {
-                Storage::disk('public')->delete($product->image);
-            }
-
-            $productData['image'] = $request->file('image')->store('vendors/products', 'public');
-        }
-
-        //stage4: create the product and associate it with the vendor
-
-
-            $vendor = Vendor::find($user->vendor->id);
-
-            // CREATE only — never update here
-            $vendor->products()->create($productData);
-
-            // Initial business hours — create once
-            $vendor->productaddons()->update([
-                'name'         => $validatedData['addon_name'],
-                'price'        => $validatedData['addon_price'],
-                'is_available' => $validatedData['is_available'] ?? true,
-            ]);
-
-
+        $updatedProduct = $this->productService->updateProduct(
+            $product,
+            $request->validated(),
+            $request->file('image')
+        );
 
         return response()->json([
-            'message' => 'Product created successfully.',
-            'data'    => $product,
-        ], 201);
+            'message' => 'Product updated successfully.',
+            'data' => $updatedProduct,
+        ], 200);
     }
-    public function destroy($id)
-    {}
 
-    public function getProductsByVendor($vendorId)
+    /**
+     * Remove the specified product.
+     */
+    public function destroy(int $id): JsonResponse
     {
-        //stage 1: check if the vendor exists
-        //stage 2: retrieve products associated with the vendor
-        //stage 3: return the products in a response
+        $product = Product::findOrFail($id);
+        $user = auth()->user();
+
+        if (! $user->vendor || ($product->vendor_id !== $user->vendor->id && $user->role !== 'admin')) {
+            return response()->json(['message' => 'Unauthorized to delete this product.'], 403);
+        }
+
+        $this->productService->deleteProduct($product);
+
+        return response()->json(['message' => 'Product deleted successfully.'], 200);
     }
 }

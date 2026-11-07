@@ -9,11 +9,11 @@ class OrderItem extends Model
 {
     protected $fillable = [
         'order_id',
-        'product_id',
-        'product_name',
+        'dish_id',
+        'name',
+        'price',
         'quantity',
-        'unit_price',
-        'total',
+        'special_instructions',
     ];
 
     public function order(): BelongsTo

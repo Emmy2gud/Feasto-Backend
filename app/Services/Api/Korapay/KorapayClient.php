@@ -7,7 +7,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-abstract class KorapayClient
+class KorapayClient
 {
     /**
      * The base URL for all Korapay calls.

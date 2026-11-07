@@ -13,9 +13,9 @@ return new class extends Migration
             $table->string('order_number')->unique();
             $table->string('idempotency_key')->unique()->nullable();
 
-            $table->foreignId('customer_id')->constrained();
-            $table->foreignId('vendor_id')->constrained();
-            $table->foreignId('rider_id')->nullable()->constrained();
+            $table->foreignId('customer_id')->constrained('users')->cascadeOnDelete();
+            $table->foreignId('vendor_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('rider_id')->nullable();
 
             $table->decimal('subtotal', 10, 2);
             $table->decimal('delivery_fee', 10, 2);
